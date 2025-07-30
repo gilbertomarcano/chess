@@ -37,10 +37,3 @@ class AnalysisResponse(BaseModel):
     best_move_san: Optional[str] = None
     evaluation: Optional["EngineMoveEvaluation"] = None
     top_moves: List["EngineMoveEvaluation"] = []
-
-class LLMChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, description="User's message for the LLM.")
-
-class LLMChatResponse(BaseModel):
-    reply: str
-    model_name: str

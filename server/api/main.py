@@ -4,15 +4,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 import chess
-from .models import (
-    HumanMoveRequest, MoveMetadata, AnalysisResponse, 
-    LLMChatRequest, LLMChatResponse
+from ..models.models import (
+    HumanMoveRequest, MoveMetadata, AnalysisResponse
 )
-from .stockfish_utils import get_stockfish_analysis
-from .llm_utils import (
-    load_llm, is_llm_loaded, generate_llm_reply
-)
-from .config import LLM_MODEL_NAME
+from ..core.stockfish_utils import get_stockfish_analysis
 
 # --- App setup ---
 app = FastAPI(
@@ -23,14 +18,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    # print(f"Attempting to load LLM model: {LLM_MODEL_NAME} on application startup...")
-    try:
-        print('Startup Event')
-        # load_llm()
-        # print(f"LLM model '{LLM_MODEL_NAME}' loaded successfully.")
-    except Exception as e:
-        print(f"CRITICAL ERROR: Failed to load LLM model '{LLM_MODEL_NAME}' on startup: {e}")
-        print("The /api/v1/llm/chat endpoint will not function correctly.")
+    print('Startup Event')
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,14 +75,6 @@ async def analyze_position_with_engine(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
-
-@app.post("/api/v1/llm/chat", response_model=LLMChatResponse)
-async def llm_chat_endpoint(request: LLMChatRequest):
-    if not is_llm_loaded():
-        raise HTTPException(status_code=503, detail="LLM service is not available. Model not loaded.")
-    user_message = request.message
-    reply = generate_llm_reply(user_message)
-    return LLMChatResponse(reply=reply, model_name=LLM_MODEL_NAME)
 
 @app.get("/")
 async def root():

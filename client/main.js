@@ -1,10 +1,10 @@
 // main.js - Main application entry point
 // Import Preact's render function and htm for templating
 import { html, render } from 'https://esm.sh/htm/preact';
-import { DEFAULT_INITIAL_FEN, DEFAULT_API_BASE_URL, DEFAULT_API_CHAT_URL } from './config.js';
+import { DEFAULT_INITIAL_FEN, DEFAULT_API_BASE_URL } from './config.js';
 
 // Import the main AppLayout component
-import AppLayout from './AppLayout.js';
+import AppLayout from './components/AppLayout.js';
 
 // Get the DOM element where the Preact app will be mounted
 const appRootElement = document.getElementById('appRoot');
@@ -16,7 +16,6 @@ if (appRootElement) {
         <${AppLayout} 
             initialFen=${DEFAULT_INITIAL_FEN} 
             apiBaseUrl=${DEFAULT_API_BASE_URL}
-            apiChatUrl=${DEFAULT_API_CHAT_URL}
         />
     `, appRootElement);
 } else {

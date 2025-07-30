@@ -4,7 +4,7 @@ import chess
 import chess.engine
 from fastapi import HTTPException
 from .config import STOCKFISH_PATH
-from .models import AnalysisResponse, EngineMoveEvaluation
+from ..models.models import AnalysisResponse, EngineMoveEvaluation
 
 async def get_stockfish_analysis(fen: str, analysis_time_limit: float = 1.0, multi_pv_count: int = 3) -> AnalysisResponse:
     engine = None
