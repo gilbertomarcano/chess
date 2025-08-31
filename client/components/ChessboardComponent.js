@@ -29,6 +29,8 @@ function ChessboardComponent(props) {
 
     // --- Refs ---
     const chessInstanceRef = useRef(null); // To store the chess.js instance
+    const boardContainerRef = useRef(null); // Reference to board container for button placement
+    const newGameButtonRef = useRef(null); // Store reference to injected New Game button
 
     // --- Utility Functions (useCallback for memoization) ---
     const getGameStatus = useCallback(() => {
@@ -126,6 +128,24 @@ function ChessboardComponent(props) {
             updateDisplayStatus(`Error processing FEN: ${e.message}`, true);
         }
     }, [chessInstanceRef, setFen, setBoardState, updateDisplayStatus, getGameStatus, setSelectedSquareId, setLegalMovesForSelected, setMoveEvaluations, setActivePieceDots, triggerEngineAnalysis]);
+
+    const handleNewGame = useCallback(() => {
+        loadFenAndUpdateBoard(initialFenFromProps);
+    }, [loadFenAndUpdateBoard, initialFenFromProps]);
+
+    useEffect(() => {
+        const boardEl = boardContainerRef.current;
+        if (!boardEl || newGameButtonRef.current) return;
+        const btn = document.createElement('button');
+        btn.textContent = 'New Game';
+        btn.id = 'new-game-button';
+        btn.addEventListener('click', handleNewGame);
+        boardEl.insertAdjacentElement('afterend', btn);
+        newGameButtonRef.current = btn;
+        return () => {
+            btn.removeEventListener('click', handleNewGame);
+        };
+    }, [boardState, handleNewGame]);
     
     // --- Initialization Effect ---
     useEffect(() => {
@@ -341,11 +361,11 @@ function ChessboardComponent(props) {
 
     // More robust check for valid instance and board state before rendering full board
     if (!chessInstanceRef.current || typeof chessInstanceRef.current.fen !== 'function' || boardState.length === 0) {
-            return html`<div class="board-container"><div id="status-message-preact" class="status-message ${statusMessage.isError ? 'error-message' : ''}">${statusMessage.text}</div></div>`;
+            return html`<div class="board-container" ref=${boardContainerRef}><div id="status-message-preact" class="status-message ${statusMessage.isError ? 'error-message' : ''}">${statusMessage.text}</div></div>`;
     }
 
     return html`
-        <div class="board-container">
+        <div class="board-container" ref=${boardContainerRef}>
             <div class="board-wrapper">
                 <div class="rank-labels">${RANKS.map(rank => html`<span key=${"rank-" + rank}>${rank}</span>`)}</div>
                 <div class="chessboard">${renderSquares()}</div>
