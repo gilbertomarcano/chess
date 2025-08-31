@@ -2,7 +2,7 @@
 import { html } from 'https://esm.sh/htm/preact';
 import { useEffect, useState } from 'https://esm.sh/preact/hooks';
 import { DEFAULT_INITIAL_FEN, DEFAULT_API_BASE_URL } from '../config.js';
-import ChessboardComponent from './ChessboardComponent.js';
+import ChessboardComponent from './ChessboardComponent.js?v=evalbar-7';
 
 function AppLayout(props) {
     const {

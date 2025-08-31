@@ -415,12 +415,50 @@ function ChessboardComponent(props) {
             return html`<div class="board-container" ref=${boardContainerRef}><div id="status-message-preact" class="status-message ${statusMessage.isError ? 'error-message' : ''}">${statusMessage.text}</div></div>`;
     }
 
+    // Compute advantage/eval bar metrics from current analysis
+    let evalDisplay = '+0.0';
+    let whiteFrac = 0.5;
+    try {
+        const currentFen = chessInstanceRef.current?.fen?.() || fen || INITIAL_FEN;
+        const parts = (currentFen || '').trim().split(/\s+/);
+        const sideToMove = (parts[1] || 'w');
+        const best = analysisData && analysisData.evaluation ? analysisData.evaluation : null;
+        const cp = (best && typeof best.score_cp === 'number') ? best.score_cp : null; // white-perspective centipawns
+        const mateIn = (best && (best.mate_in !== null && best.mate_in !== undefined)) ? best.mate_in : null; // from side-to-move POV
+        if (cp !== null) {
+            // Positive = White advantage
+            const pawns = cp / 100.0;
+            const clamped = Math.max(-10, Math.min(10, pawns));
+            whiteFrac = 0.5 + (clamped / 20.0);
+            evalDisplay = (clamped >= 0 ? '+' : '') + clamped.toFixed(1);
+        } else if (mateIn !== null) {
+            // Map mate to max advantage, infer sign for White advantage
+            const whiteWinning = (sideToMove === 'w' && mateIn > 0) || (sideToMove === 'b' && mateIn < 0);
+            whiteFrac = whiteWinning ? 1.0 : 0.0;
+            evalDisplay = (whiteWinning ? '+M' : '-M') + Math.abs(mateIn);
+        } else {
+            whiteFrac = 0.5;
+            evalDisplay = '+0.0';
+        }
+    } catch (_) { /* noop - keep defaults */ }
+
+    const whitePercent = Math.max(0, Math.min(100, (whiteFrac * 100)));
+
     return html`
         <div class="board-container" ref=${boardContainerRef}>
             <div class="board-wrapper">
                 <div class="rank-labels">${RANKS.map(rank => html`<span key=${"rank-" + rank}>${rank}</span>`)}</div>
                 <div class="chessboard">${renderSquares()}</div>
                 <div class="file-labels">${FILES.map(file => html`<span key=${"file-" + file}>${file}</span>`)}</div>
+            </div>
+            <div class="eval-bar-row" style=${{ display: 'flex', width: '100%', maxWidth: '560px', margin: '6px 0 0 0' }}>
+                <div class="advantage-bar-h" style=${{ position: 'relative', height: '24px', width: '100%', border: '2px solid #1e1f22', borderRadius: '6px', overflow: 'hidden', background: '#111827' }}>
+                    <div class="adv-h-inner" style=${{ position: 'absolute', inset: 0 }}>
+                        <div style=${{ position: 'absolute', left: 0, top: 0, bottom: 0, background: '#f9fafb', width: `${whitePercent.toFixed(1)}%` }}></div>
+                        <div style=${{ position: 'absolute', right: 0, top: 0, bottom: 0, background: '#0b0b0b', width: `${(100 - whitePercent).toFixed(1)}%` }}></div>
+                    </div>
+                    <div style=${{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 700, fontSize: '12px', color: '#e5e7eb', textShadow: '0 1px 2px rgba(0,0,0,0.65)', pointerEvents: 'none' }}>${evalDisplay}</div>
+                </div>
             </div>
             <div id="status-message-preact" class="status-message ${statusMessage.isError ? 'error-message' : ''}">${statusMessage.text}</div>
         </div>`;
