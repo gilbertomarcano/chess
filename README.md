@@ -162,16 +162,3 @@ Notes:
    - Using a local venv: `pip install sqlite-web`
 2) Run: `sqlite_web ./server/data/chess.db` (or `python -m sqlite_web ./server/data/chess.db`)
 3) Open the printed URL (e.g., `http://127.0.0.1:8080`) to browse the `games` table.
-
-### Quick CLI Verification
-- List recent ids (if `sqlite3` CLI is available):
-
-  ```sh
-  sqlite3 ./server/data/chess.db "SELECT id FROM games;"
-  ```
-
-- Inspect stored state (id, fen, pgn):
-
-  ```sh
-  sqlite3 ./server/data/chess.db "SELECT id, fen, pgn FROM games;"
-  ```
