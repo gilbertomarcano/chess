@@ -13,6 +13,7 @@ The app is an interactive chessboard that:
   - “Deselected. Turn: Black.” (when nothing is selected)
   - “Selected ♝ on c8. Turn: Black.” (when a bishop at c8 is selected)
   - “Selected ♞ on f6. Turn: Black.” (when a knight at f6 is selected)
+ - Advantage bar on the board’s right edge shows the current evaluation: white portion grows with positive eval (White advantage), black with negative. Value is clamped in ±10 pawns and shown as a signed number next to the bar.
 
 ## Two Interaction States
 - **Idle:** No piece selected.
