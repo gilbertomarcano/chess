@@ -2,7 +2,7 @@
 import { html } from 'https://esm.sh/htm/preact';
 import { useEffect, useState } from 'https://esm.sh/preact/hooks';
 import { DEFAULT_INITIAL_FEN, DEFAULT_API_BASE_URL } from '../config.js';
-import ChessboardComponent from './ChessboardComponent.js?v=evalbar-7';
+import ChessboardComponent from './ChessboardComponent.js?v=gid-url-1';
 
 function AppLayout(props) {
     const {
@@ -17,6 +17,17 @@ function AppLayout(props) {
     const [availableIds, setAvailableIds] = useState([]);
     const [loadedFen, setLoadedFen] = useState(initialFen);
     const [loadedPgn, setLoadedPgn] = useState('');
+
+    // Helper: keep gameId in the URL so refresh preserves the same game
+    const updateUrlGameId = (id, replace = false) => {
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('gameId', id);
+            const newUrl = url.toString();
+            if (replace) window.history.replaceState(null, '', newUrl);
+            else window.history.pushState(null, '', newUrl);
+        } catch (_) { /* noop */ }
+    };
 
     // Clean up any stray legacy buttons labeled exactly "New Game" and keep removing if they appear later
     useEffect(() => {
@@ -38,20 +49,41 @@ function AppLayout(props) {
         return () => { try { observer.disconnect(); } catch (_) {} };
     }, []);
 
-    // Create a fresh id on app initialization
+    // On load: use ?gameId=... if present; otherwise create a new id.
     useEffect(() => {
         const run = async () => {
             setIsLoading(true);
             try {
-                const res = await fetch(`${apiBaseUrl}/games/new`, { method: 'POST' });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data?.detail || 'Failed to create initial game id');
-                setCurrentGameId(data.id);
+                const params = new URLSearchParams(window.location.search || '');
+                let initialId = params.get('gameId') || params.get('game_id');
+
+                if (initialId) {
+                    // Try to load existing state for this id
+                    const res = await fetch(`${apiBaseUrl}/games/${initialId}`);
+                    const data = await res.json();
+                    if (res.ok) {
+                        setCurrentGameId(initialId);
+                        setLoadedFen(data?.fen || initialFen);
+                        setLoadedPgn(data?.pgn || '');
+                        // Normalize param to gameId
+                        updateUrlGameId(initialId, true);
+                        return;
+                    } else {
+                        console.warn('Provided gameId not found, creating a new one.');
+                    }
+                }
+
+                // Fallback: create a fresh id
+                const resNew = await fetch(`${apiBaseUrl}/games/new`, { method: 'POST' });
+                const dataNew = await resNew.json();
+                if (!resNew.ok) throw new Error(dataNew?.detail || 'Failed to create initial game id');
+                setCurrentGameId(dataNew.id);
                 setLoadedFen(initialFen);
                 setLoadedPgn('');
-                // persist initial state (starting FEN, empty PGN)
+                updateUrlGameId(dataNew.id, true);
+                // best-effort: persist initial state
                 try {
-                    await fetch(`${apiBaseUrl}/games/${data.id}`, {
+                    await fetch(`${apiBaseUrl}/games/${dataNew.id}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fen: initialFen, pgn: '' })
@@ -60,13 +92,13 @@ function AppLayout(props) {
                     console.warn('Initial state persistence failed:', e);
                 }
             } catch (e) {
-                console.error('Initial game id creation failed:', e);
+                console.error('Initialization failed:', e);
             } finally {
                 setIsLoading(false);
             }
         };
         run();
-    }, [apiBaseUrl]);
+    }, [apiBaseUrl, initialFen]);
 
     const handleCreateNewGame = async () => {
         setIsLoading(true);
@@ -77,6 +109,7 @@ function AppLayout(props) {
             setCurrentGameId(data.id);
             setLoadedFen(initialFen);
             setLoadedPgn('');
+            updateUrlGameId(data.id, false);
             try {
                 await fetch(`${apiBaseUrl}/games/${data.id}`, {
                     method: 'PATCH',
@@ -118,11 +151,13 @@ function AppLayout(props) {
             setCurrentGameId(id);
             setLoadedFen(data?.fen || initialFen);
             setLoadedPgn(data?.pgn || '');
+            updateUrlGameId(id, false);
         } catch (e) {
             console.error('Failed to load game state:', e);
             setCurrentGameId(id);
             setLoadedFen(initialFen);
             setLoadedPgn('');
+            updateUrlGameId(id, false);
         } finally {
             setShowLoadList(false);
             setIsLoading(false);
