@@ -12,7 +12,9 @@ from ..models.models import (
 from ..core.stockfish_utils import get_stockfish_analysis
 from ..core.db import init_db, insert_game_id, list_game_ids, update_game_state, get_game_state
 
-import uuid
+import secrets
+import string
+import sqlite3
 
 # --- App setup ---
 app = FastAPI(
@@ -128,16 +130,45 @@ async def root():
 
 
 # --- Game ID endpoints ---
+
+def _generate_stripe_like_id(prefix: str = "game", length: int = 12) -> str:
+    """
+    Generate a human-friendly ID similar to Stripe IDs.
+    Format: "{prefix}_{random}" where random is [A-Za-z0-9] of given length.
+    Example: "game_k9Q3m2X7W4b1".
+
+    Notes:
+    - Uses letters (upper/lower) and digits for readability/typing.
+    - Use `secrets` for cryptographic randomness.
+    """
+    alphabet = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    rand = ''.join(secrets.choice(alphabet) for _ in range(length))
+    return f"{prefix}_{rand}"
 @app.post("/api/v1/games/new")
 async def create_new_game_id():
-    """Generate a new UUID and insert into the DB, return the id."""
+    """Generate a new human-friendly game id and insert into the DB, return the id.
+
+    Format: "game_<alphanum>" using lowercase letters and digits (no dashes),
+    e.g. "game_8f3k2mz0wq9b7d1c".
+    """
     try:
-        new_id = str(uuid.uuid4())
-        insert_game_id(new_id)
+        # Attempt insert; retry on rare collision
+        max_attempts = 5
+        for _ in range(max_attempts):
+            new_id = _generate_stripe_like_id()
+            try:
+                insert_game_id(new_id)
+                break
+            except sqlite3.IntegrityError:
+                # Collision; try another id
+                continue
+        else:
+            raise RuntimeError("Failed to generate unique game id after retries")
+
         # Initialize with starting FEN and empty PGN to avoid NULLs
         try:
             update_game_state(new_id, fen=STARTING_FEN, pgn="")
-        except Exception as _:
+        except Exception:
             # Non-fatal: keep id creation even if init state fails
             pass
         return {"id": new_id}
