@@ -139,3 +139,39 @@ Notes:
     - The backend runs on port 8011.
 
 ---
+
+## Local Persistence (SQLite)
+
+- Database file path: `./server/data/chess.db`
+- Schema is created/updated automatically on server startup. Table `games` now includes:
+  - `id TEXT PRIMARY KEY`
+  - `fen TEXT` (current position for this game)
+  - `pgn TEXT` (simple PGN string accumulated for the session)
+
+### Game ID Lifecycle
+- On every app refresh/initialization, a new game id is generated and inserted into the DB and treated as the current session id. The starting FEN is persisted and PGN initialized empty.
+- Clicking “Create New Game” generates and inserts another new id, persists starting FEN and empty PGN, and sets it as current.
+- Clicking “Load Game” shows a list of existing ids from the DB; selecting one sets it as current.
+- After each successful move, the current FEN and a simple PGN string are saved for the current game id.
+  - The server updates FEN/PGN on every move when the request includes header `X-Game-Id: <game_id>` (the client sends this automatically). This ensures correct SAN disambiguation and numbering based on position.
+
+### Inspect the DB with sqlite_web
+1) Ensure `sqlite_web` is installed:
+   - If using the server’s virtualenv/requirements: `pip install -r server/requirements.txt` (includes `sqlite-web`), or
+   - Using pipx: `pipx install sqlite-web`, or
+   - Using a local venv: `pip install sqlite-web`
+2) Run: `sqlite_web ./server/data/chess.db` (or `python -m sqlite_web ./server/data/chess.db`)
+3) Open the printed URL (e.g., `http://127.0.0.1:8080`) to browse the `games` table.
+
+### Quick CLI Verification
+- List recent ids (if `sqlite3` CLI is available):
+
+  ```sh
+  sqlite3 ./server/data/chess.db "SELECT id FROM games;"
+  ```
+
+- Inspect stored state (id, fen, pgn):
+
+  ```sh
+  sqlite3 ./server/data/chess.db "SELECT id, fen, pgn FROM games;"
+  ```

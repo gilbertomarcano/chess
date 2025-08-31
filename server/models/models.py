@@ -37,3 +37,19 @@ class AnalysisResponse(BaseModel):
     best_move_san: Optional[str] = None
     evaluation: Optional["EngineMoveEvaluation"] = None
     top_moves: List["EngineMoveEvaluation"] = []
+
+
+# --- Game models ---
+class GameId(BaseModel):
+    id: str
+
+
+class GameStateUpdate(BaseModel):
+    fen: Optional[str] = None
+    pgn: Optional[str] = None
+
+
+class GameState(BaseModel):
+    id: str
+    fen: Optional[str] = None
+    pgn: Optional[str] = None
