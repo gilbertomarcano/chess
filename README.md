@@ -107,10 +107,19 @@ Notes:
 
 ### Requirements
 - Python 3.13
+- Stockfish
 
 ### Setup
 
-1. **Create the virtual environment:**
+1. **Install dependencies (MacOS):**
+    ```sh
+    brew install python @3.13
+    echo 'export PATH="$(brew --prefix)/opt/python@3.13/bin:$PATH"' >> ~/.zshrc
+
+    brew install stockfish
+    ```
+
+2. **Create the virtual environment:**
     ```sh
     cd server
     python3.13 -m venv env
@@ -118,14 +127,14 @@ Notes:
     pip install -r requirements.txt
     ```
 
-2. **Run the backend and frontend:**
+3. **Run the backend and frontend:**
     From the project root:
     ```sh
     make run
     ```
     This will start both the FastAPI backend and the static file server for the client.
 
-3. **Open the app:**
+4. **Open the app:**
     - Visit [http://localhost:8000](http://localhost:8000) in your browser for the client.
     - The backend runs on port 8011.
 
