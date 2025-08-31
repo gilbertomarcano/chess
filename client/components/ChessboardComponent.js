@@ -25,12 +25,74 @@ function ChessboardComponent(props) {
     const [isBoardLocked, setIsBoardLocked] = useState(false);
     const [activePieceDots, setActivePieceDots] = useState({});
     const [moveEvaluations, setMoveEvaluations] = useState({});
+    const [pgnMoves, setPgnMoves] = useState([]);
     console.log(fen)
 
     // --- Refs ---
     const chessInstanceRef = useRef(null); // To store the chess.js instance
-    const boardContainerRef = useRef(null); // Reference to board container for button placement
-    const newGameButtonRef = useRef(null); // Store reference to injected New Game button
+    const boardContainerRef = useRef(null); // Reference to board container
+    const gameIdRef = useRef(props.gameId);
+
+    useEffect(() => {
+        gameIdRef.current = props.gameId;
+    }, [props.gameId]);
+
+    // Initialize PGN moves from provided simple PGN string on mount
+    useEffect(() => {
+        const pgnStr = props.initialPgn || '';
+        if (!pgnStr) { setPgnMoves([]); return; }
+        const tokens = pgnStr.trim().split(/\s+/);
+        const results = new Set(['1-0','0-1','1/2-1/2','*']);
+        const moves = tokens.filter(t => !t.endsWith('.') && !results.has(t));
+        setPgnMoves(moves);
+    }, []);
+
+    // Note: pgnMoves is initialized from props.initialPgn on mount (component remounts per gameId)
+
+    const API_WRITE_BASE = props.apiBaseUrl || API_BASE_URL;
+
+    const buildPgnFromMoves = useCallback((movesArr, startingFen) => {
+        if (!movesArr || movesArr.length === 0) return '';
+        let active = 'w';
+        let fullmove = 1;
+        if (startingFen && typeof startingFen === 'string') {
+            const parts = startingFen.trim().split(/\s+/);
+            if (parts.length >= 6) {
+                active = parts[1] === 'b' ? 'b' : 'w';
+                const parsed = parseInt(parts[5], 10);
+                if (!isNaN(parsed) && parsed > 0) fullmove = parsed;
+            }
+        }
+        const out = [];
+        for (let i = 0; i < movesArr.length; i++) {
+            const san = movesArr[i];
+            if (active === 'w') {
+                out.push(`${fullmove}. ${san}`);
+                active = 'b';
+            } else {
+                if (i === 0) out.push(`${fullmove}... ${san}`);
+                else out.push(san);
+                active = 'w';
+                fullmove += 1;
+            }
+        }
+        return out.join(' ');
+    }, []);
+
+    const persistGameState = useCallback(async (fenToSave, pgnToSave) => {
+        const gid = gameIdRef.current;
+        if (!gid) return;
+        try {
+            await fetch(`${API_WRITE_BASE}/games/${gid}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fen: fenToSave, pgn: pgnToSave })
+            });
+        } catch (e) {
+            // best-effort persistence
+            console.warn('Persist game state failed:', e);
+        }
+    }, [API_WRITE_BASE]);
 
     // --- Utility Functions (useCallback for memoization) ---
     const getGameStatus = useCallback(() => {
@@ -74,7 +136,7 @@ function ChessboardComponent(props) {
         }
         updateDisplayStatus("Fetching engine analysis...");
         const encodedFen = encodeURIComponent(currentFenForAnalysis);
-        const analysisUrl = `${API_BASE_URL}/analyze/moves?fen=${encodedFen}&time_limit=${timeLimit}&num_lines=${numLines}`;
+        const analysisUrl = `${API_WRITE_BASE}/analyze/moves?fen=${encodedFen}&time_limit=${timeLimit}&num_lines=${numLines}`;
         try {
             const response = await fetch(analysisUrl);
             const responseText = await response.text();
@@ -92,7 +154,7 @@ function ChessboardComponent(props) {
             updateDisplayStatus(`Analysis error: ${error.message}`, true);
             setAnalysisData(null);
         }
-    }, [updateDisplayStatus, setAnalysisData, API_BASE_URL]);
+    }, [updateDisplayStatus, setAnalysisData, API_WRITE_BASE]);
 
     const loadFenAndUpdateBoard = useCallback((newFenToLoad) => {
         const chess = chessInstanceRef.current;
@@ -129,28 +191,7 @@ function ChessboardComponent(props) {
         }
     }, [chessInstanceRef, setFen, setBoardState, updateDisplayStatus, getGameStatus, setSelectedSquareId, setLegalMovesForSelected, setMoveEvaluations, setActivePieceDots, triggerEngineAnalysis]);
 
-    const handleNewGame = useCallback(() => {
-        const chess = chessInstanceRef.current;
-        if (chess && typeof chess.reset === 'function') {
-            chess.reset();
-        }
-        loadFenAndUpdateBoard(initialFenFromProps);
-    }, [loadFenAndUpdateBoard, initialFenFromProps]);
-
-    useEffect(() => {
-        const boardEl = boardContainerRef.current;
-        if (!boardEl || newGameButtonRef.current) return;
-        const btn = document.createElement('button');
-        btn.textContent = 'New Game';
-        btn.id = 'new-game-button';
-        btn.type = 'button';
-        btn.addEventListener('click', handleNewGame);
-        boardEl.insertAdjacentElement('afterend', btn);
-        newGameButtonRef.current = btn;
-        return () => {
-            btn.removeEventListener('click', handleNewGame);
-        };
-    }, [handleNewGame]);
+    // Removed legacy injected "New Game" button. Use top-level "Create New Game" instead.
     
     // --- Initialization Effect ---
     useEffect(() => {
@@ -284,19 +325,24 @@ function ChessboardComponent(props) {
         setActivePieceDots({}); setMoveEvaluations({}); setLegalMovesForSelected([]);
         const payload = { fen: currentFenOnClient, from: fromSquare, to: toSquare }; if (promotion) payload.promotion = promotion;
         try {
-            const response = await fetch(`${API_BASE_URL}/board/human/move`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(payload) });
+            const gid = gameIdRef.current || '';
+            const response = await fetch(`${API_WRITE_BASE}/board/human/move?game_id=${encodeURIComponent(gid)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-Game-Id': gid }, body: JSON.stringify(payload) });
             const responseText = await response.text(); let responseData;
             try { responseData = JSON.parse(responseText); } catch (e) { throw new Error(`Non-JSON move response (Status:${response.status}). Text:${responseText}`); }
             if (!response.ok) throw new Error(responseData.detail || responseData.message || `Move error:${response.status}`);
             if (!responseData.new_fen) throw new Error("No 'new_fen' in response.");
-            loadFenAndUpdateBoard(responseData.new_fen); 
+            loadFenAndUpdateBoard(responseData.new_fen);
+            const nextMoves = [...pgnMoves, responseData.move_san].filter(Boolean);
+            setPgnMoves(nextMoves);
+            const pgnText = buildPgnFromMoves(nextMoves, initialFenFromProps);
+            persistGameState(responseData.new_fen, pgnText);
             updateDisplayStatus(`Move: ${responseData.move_san || (fromSquare + '-' + toSquare)}. ${getGameStatus()}`);
         } catch (error) {
             // console.error("[submitMoveToServer] Error:", error.message);
             updateDisplayStatus(`Error: ${error.message}. Board reverted.`, true);
             loadFenAndUpdateBoard(currentFenOnClient); // Revert client
         } finally { setIsBoardLocked(false); }
-    }, [API_BASE_URL, setIsBoardLocked, updateDisplayStatus, getGameStatus, loadFenAndUpdateBoard, setActivePieceDots, setMoveEvaluations, setLegalMovesForSelected]);
+    }, [API_WRITE_BASE, setIsBoardLocked, updateDisplayStatus, getGameStatus, loadFenAndUpdateBoard, setActivePieceDots, setMoveEvaluations, setLegalMovesForSelected, pgnMoves, buildPgnFromMoves, persistGameState]);
 
     const onSquareClick = useCallback(async (clickedSquareId) => {
         const chess = chessInstanceRef.current;

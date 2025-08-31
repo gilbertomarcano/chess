@@ -54,24 +54,8 @@
         .eval-text-mate-positive { background-color: rgba(41, 128, 185, 0.85); }
         .eval-text-mate-negative { background-color: rgba(192, 57, 43, 0.9); }
 
-        /* New Game button styling */
-        #new-game-button {
-            display: block;
-            margin: 10px auto 0 auto;
-            padding: 8px 16px;
-            background-color: #374151;
-            color: #e5e7eb;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            width: 100%;
-            max-width: 560px;
-            font-weight: 600;
-        }
-
-        #new-game-button:hover {
-            background-color: #4b5563;
-        }
+        /* Force-hide any legacy-injected New Game button */
+        #new-game-button { display: none !important; visibility: hidden !important; }
 
         /* --- ChatMessage Component Styles (Consolidated) --- */
         /* These styles are intended for elements rendered by ChatMessageComponent.js */
@@ -91,7 +75,26 @@
     <div id="appRoot" class="flex flex-col md:flex-row w-screen h-screen overflow-hidden">
         <p class="text-white text-xl p-10">Loading Chess & Chat App...</p>
     </div>
-
-    <script type="module" src="./main.js"></script>
+    <script>
+      // Guard: remove any legacy-injected buttons labeled exactly "New Game"
+      (function () {
+        function scrub() {
+          try {
+            document.querySelectorAll('#new-game-button').forEach(el => el.remove());
+            const all = document.querySelectorAll('button, [role="button"], .btn, .button, a, div');
+            all.forEach(el => {
+              const txt = (el.textContent || el.innerText || '').trim().toLowerCase();
+              if (txt && txt === 'new game') el.remove();
+            });
+          } catch (_) {}
+        }
+        scrub();
+        try {
+          new MutationObserver(scrub).observe(document.documentElement, { childList: true, subtree: true });
+        } catch (_) {}
+        window.addEventListener('DOMContentLoaded', scrub);
+      })();
+    </script>
+    <script type="module" src="./main.js?v=ui-fix-1"></script>
 </body>
 </html>
