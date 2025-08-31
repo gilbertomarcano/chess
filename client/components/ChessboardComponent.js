@@ -130,6 +130,10 @@ function ChessboardComponent(props) {
     }, [chessInstanceRef, setFen, setBoardState, updateDisplayStatus, getGameStatus, setSelectedSquareId, setLegalMovesForSelected, setMoveEvaluations, setActivePieceDots, triggerEngineAnalysis]);
 
     const handleNewGame = useCallback(() => {
+        const chess = chessInstanceRef.current;
+        if (chess && typeof chess.reset === 'function') {
+            chess.reset();
+        }
         loadFenAndUpdateBoard(initialFenFromProps);
     }, [loadFenAndUpdateBoard, initialFenFromProps]);
 
@@ -139,13 +143,14 @@ function ChessboardComponent(props) {
         const btn = document.createElement('button');
         btn.textContent = 'New Game';
         btn.id = 'new-game-button';
+        btn.type = 'button';
         btn.addEventListener('click', handleNewGame);
         boardEl.insertAdjacentElement('afterend', btn);
         newGameButtonRef.current = btn;
         return () => {
             btn.removeEventListener('click', handleNewGame);
         };
-    }, [boardState, handleNewGame]);
+    }, [handleNewGame]);
     
     // --- Initialization Effect ---
     useEffect(() => {
