@@ -109,7 +109,7 @@ async def process_human_move(
 async def analyze_position_with_engine(
     fen: str = Query(...),
     time_limit: float = Query(1.0, ge=0.1, le=10.0),
-    num_lines: int = Query(5, ge=1, le=24)
+    num_lines: int = Query(5, ge=1, le=42)
 ):
     if not fen:
         raise HTTPException(status_code=400, detail="FEN required.")

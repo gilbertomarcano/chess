@@ -129,7 +129,7 @@ function ChessboardComponent(props) {
         setStatusMessageContent({ text: message || getGameStatus(), isError });
     }, [getGameStatus, setStatusMessageContent]);
 
-    const triggerEngineAnalysis = useCallback(async (currentFenForAnalysis, timeLimit = 1.0, numLines = 24) => {
+    const triggerEngineAnalysis = useCallback(async (currentFenForAnalysis, timeLimit = 1.0, numLines = 42) => {
         if (!currentFenForAnalysis) {
             // console.warn("[triggerEngineAnalysis] called with no FEN.");
             return;
@@ -233,7 +233,7 @@ function ChessboardComponent(props) {
             let currentMovePerspectiveScoreCp = isWhiteToMoveInAnalyzedFen ? scoreCp : -scoreCp;
             if (isBestOverallForPiece) return {text: "eval-text-best", dot: "dot-best"};
             const cpDrop = bestOverallScoreCpForTurn - currentMovePerspectiveScoreCp;
-            const goodThresholdDrop = 20; const neutralThresholdDrop = 70; const badThresholdDrop = 150;
+            const goodThresholdDrop = 20; const neutralThresholdDrop = 40; const badThresholdDrop = 150;
             if (cpDrop <= goodThresholdDrop) return {text: "eval-text-good", dot: "dot-good"};
             if (cpDrop <= neutralThresholdDrop) return {text: "eval-text-neutral", dot: "dot-neutral"};
             if (cpDrop <= badThresholdDrop) return {text: "eval-text-bad", dot: "dot-bad"};
