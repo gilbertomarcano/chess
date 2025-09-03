@@ -43,7 +43,8 @@ function ChessboardComponent(props) {
         if (!pgnStr) { setPgnMoves([]); return; }
         const tokens = pgnStr.trim().split(/\s+/);
         const results = new Set(['1-0','0-1','1/2-1/2','*']);
-        const moves = tokens.filter(t => !t.endsWith('.') && !results.has(t));
+        // Exclude move numbers like "1." and "1...", and results
+        const moves = tokens.filter(t => !/^\d+\.{1,3}$/.test(t) && !results.has(t));
         setPgnMoves(moves);
     }, []);
 
@@ -334,7 +335,7 @@ function ChessboardComponent(props) {
             loadFenAndUpdateBoard(responseData.new_fen);
             const nextMoves = [...pgnMoves, responseData.move_san].filter(Boolean);
             setPgnMoves(nextMoves);
-            const pgnText = buildPgnFromMoves(nextMoves, initialFenFromProps);
+            const pgnText = buildPgnFromMoves(nextMoves, (props.startingFen || INITIAL_FEN));
             persistGameState(responseData.new_fen, pgnText);
             updateDisplayStatus(`Move: ${responseData.move_san || (fromSquare + '-' + toSquare)}. ${getGameStatus()}`);
         } catch (error) {

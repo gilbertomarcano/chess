@@ -17,6 +17,7 @@ function AppLayout(props) {
     const [availableIds, setAvailableIds] = useState([]);
     const [loadedFen, setLoadedFen] = useState(initialFen);
     const [loadedPgn, setLoadedPgn] = useState('');
+    const [boardVersion, setBoardVersion] = useState(0);
 
     // Helper: keep gameId in the URL so refresh preserves the same game
     const updateUrlGameId = (id, replace = false) => {
@@ -142,6 +143,86 @@ function AppLayout(props) {
         }
     };
 
+    const handleUndoClick = async () => {
+        if (!currentGameId) return;
+        setIsLoading(true);
+        try {
+            // 1) Read current PGN from backend
+            const res = await fetch(`${apiBaseUrl}/games/${currentGameId}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.detail || 'Failed to fetch game state');
+
+            const pgnText = (data?.pgn || '').trim();
+            if (!pgnText) { setIsLoading(false); return; }
+            const tokens = pgnText.split(/\s+/);
+            const results = new Set(['1-0','0-1','1/2-1/2','*']);
+            const sanMoves = tokens.filter(t => !/^\d+\.{1,3}$/.test(t) && !results.has(t));
+            if (sanMoves.length === 0) { setIsLoading(false); return; }
+
+            const newMoves = sanMoves.slice(0, -1);
+
+            // 2) Rebuild FEN from starting position using chess.js
+            if (typeof window === 'undefined' || typeof window.Chess !== 'function') {
+                throw new Error('Chess engine not available');
+            }
+            const chess = new window.Chess();
+            // If app starts from a custom FEN, load it first
+            try { if (initialFen && initialFen !== chess.fen()) chess.load(initialFen); } catch (_) {}
+            for (const san of newMoves) {
+                const ok = chess.move(san, { sloppy: true });
+                if (!ok) throw new Error(`Failed to replay SAN: ${san}`);
+            }
+            const newFen = chess.fen();
+            // Build a clean SAN-only PGN without headers, with correct numbering
+            const buildPgnFromMovesLocal = (movesArr, startingFenStr) => {
+                if (!movesArr || movesArr.length === 0) return '';
+                let active = 'w';
+                let fullmove = 1;
+                try {
+                    const parts = (startingFenStr || '').trim().split(/\s+/);
+                    if (parts.length >= 6) {
+                        active = parts[1] === 'b' ? 'b' : 'w';
+                        const parsed = parseInt(parts[5], 10);
+                        if (!isNaN(parsed) && parsed > 0) fullmove = parsed;
+                    }
+                } catch (_) {}
+                const out = [];
+                for (let i = 0; i < movesArr.length; i++) {
+                    const san = movesArr[i];
+                    if (active === 'w') {
+                        out.push(`${fullmove}. ${san}`);
+                        active = 'b';
+                    } else {
+                        if (i === 0) out.push(`${fullmove}... ${san}`);
+                        else out.push(san);
+                        active = 'w';
+                        fullmove += 1;
+                    }
+                }
+                return out.join(' ');
+            };
+            const newPgn = buildPgnFromMovesLocal(newMoves, initialFen);
+
+            // 3) Persist to backend
+            const patchRes = await fetch(`${apiBaseUrl}/games/${currentGameId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fen: newFen, pgn: newPgn })
+            });
+            const patched = await patchRes.json().catch(() => ({}));
+            if (!patchRes.ok) throw new Error(patched?.detail || 'Failed to update game');
+
+            // 4) Update UI and force board remount
+            setLoadedFen(newFen);
+            setLoadedPgn(newPgn);
+            setBoardVersion(v => v + 1);
+        } catch (e) {
+            console.error('Undo failed:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSelectExistingId = async (id) => {
         setIsLoading(true);
         try {
@@ -169,6 +250,11 @@ function AppLayout(props) {
             <div className="w-full md:w-2/3 lg:w-3/5 h-full flex flex-col items-center p-2 md:p-4 bg-gray-800 overflow-y-auto">
                 <div className="w-full max-w-[630px] flex items-center justify-between gap-2 mb-2">
                     <div className="flex gap-2">
+                        <button 
+                            className="px-3 py-2 rounded ${!isLoading ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-800 text-gray-500 cursor-not-allowed'} text-sm font-semibold"
+                            onClick=${handleUndoClick}
+                            disabled=${isLoading}
+                        >Undo</button>
                         <button 
                             className="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-100 text-sm font-semibold"
                             onClick=${handleLoadGameClick}
@@ -206,8 +292,9 @@ function AppLayout(props) {
 
                 <div className="w-full max-w-[630px] aspect-square">
                     <${ChessboardComponent} 
-                        key=${currentGameId || 'board'}
+                        key=${(currentGameId || 'board') + ':' + boardVersion}
                         initialFen=${loadedFen || initialFen}
+                        startingFen=${initialFen}
                         apiBaseUrl=${apiBaseUrl}
                         gameId=${currentGameId}
                         initialPgn=${loadedPgn}
