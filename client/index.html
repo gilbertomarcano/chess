@@ -22,6 +22,8 @@
         .board-container { display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; padding: 1rem; }
         .chessboard { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; /* Takes width of its direct parent */ max-width: 560px; /* Max physical size */ height: auto; aspect-ratio: 1 / 1; border: 4px solid #1e1f22; border-radius: 6px; box-shadow: 0 8px 16px rgba(0,0,0,0.25); position: relative; }
         .square { display: flex; justify-content: center; align-items: center; font-size: clamp(20px, 5vw, 48px); user-select: none; position: relative; cursor: pointer; overflow: hidden; }
+        .square[draggable="true"] { cursor: grab; }
+        .square[draggable="true"]:active { cursor: grabbing; }
         .light { background-color: #f0d9b5; } 
         .dark { background-color: #b58863; }
         .piece { pointer-events: none; line-height: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }

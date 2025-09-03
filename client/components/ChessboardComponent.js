@@ -32,6 +32,8 @@ function ChessboardComponent(props) {
     const chessInstanceRef = useRef(null); // To store the chess.js instance
     const boardContainerRef = useRef(null); // Reference to board container
     const gameIdRef = useRef(props.gameId);
+    const dragFromRef = useRef(null); // Track drag origin square
+    const dragImageElRef = useRef(null); // Temporary custom drag image element
 
     useEffect(() => {
         gameIdRef.current = props.gameId;
@@ -390,9 +392,136 @@ function ChessboardComponent(props) {
         }
     }, [chessInstanceRef, isBoardLocked, selectedSquareId, updateDisplayStatus, getGameStatus, submitMoveToServer, setSelectedSquareId, setLegalMovesForSelected, PIECE_SYMBOL_MAP]);
 
+    // --- Drag & Drop Handlers ---
+    const onDragStartSquare = useCallback((e, fromSquareId) => {
+        const chess = chessInstanceRef.current;
+        if (!chess || typeof chess.moves !== 'function' || isBoardLocked) {
+            if (e && e.preventDefault) e.preventDefault();
+            return;
+        }
+        const piece = chess.get(fromSquareId);
+        if (!piece || piece.color !== chess.turn()) {
+            if (e && e.preventDefault) e.preventDefault();
+            return;
+        }
+        dragFromRef.current = fromSquareId;
+        setSelectedSquareId(fromSquareId);
+        try {
+            const legal = chess.moves({ square: fromSquareId, verbose: true }).map(m => m.to);
+            setLegalMovesForSelected(legal);
+        } catch (_) { setLegalMovesForSelected([]); }
+        updateDisplayStatus(`Dragging from ${fromSquareId}...`);
+        try {
+            if (e && e.dataTransfer) {
+                e.dataTransfer.setData('text/plain', fromSquareId);
+                e.dataTransfer.effectAllowed = 'move';
+                // Provide a custom drag image that only shows the piece glyph (no square background)
+                const symbol = PIECE_SYMBOL_MAP[piece.type]?.[piece.color] || '';
+                if (symbol) {
+                    const rect = (e.currentTarget && e.currentTarget.getBoundingClientRect) ? e.currentTarget.getBoundingClientRect() : { width: 56, height: 56 };
+                    const size = Math.max(24, Math.round(Math.min(rect.width, rect.height)));
+                    const fontSize = Math.round(size * 0.85);
+                    const el = document.createElement('div');
+                    el.style.position = 'absolute';
+                    el.style.top = '-9999px';
+                    el.style.left = '-9999px';
+                    el.style.width = `${size}px`;
+                    el.style.height = `${size}px`;
+                    el.style.display = 'flex';
+                    el.style.alignItems = 'center';
+                    el.style.justifyContent = 'center';
+                    el.style.background = 'transparent';
+                    el.style.border = 'none';
+                    el.style.pointerEvents = 'none';
+                    el.style.lineHeight = '1';
+                    el.style.fontSize = `${fontSize}px`;
+                    el.style.fontFamily = 'Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+                    el.style.color = piece.color === 'w' ? '#f8f8f8' : '#282828';
+                    el.style.textShadow = piece.color === 'w' ? '0 0 3px rgba(0,0,0,0.7)' : '0 0 3px rgba(255,255,255,0.5)';
+                    el.textContent = symbol;
+                    try { document.body.appendChild(el); dragImageElRef.current = el; } catch (_) { dragImageElRef.current = null; }
+                    const offset = Math.round(size / 2);
+                    try { e.dataTransfer.setDragImage(el, offset, offset); } catch (_) {}
+                }
+            }
+        } catch (_) { /* no-op */ }
+    }, [chessInstanceRef, isBoardLocked, setSelectedSquareId, setLegalMovesForSelected, updateDisplayStatus]);
+
+    const onDragOverSquare = useCallback((e, toSquareId) => {
+        // Allow drop; we still validate legality on drop
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        try { if (e && e.dataTransfer) e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    }, []);
+
+    const onDropOnSquare = useCallback(async (e, toSquareId) => {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const chess = chessInstanceRef.current;
+        if (!chess || typeof chess.moves !== 'function') return;
+
+        let fromSq = null;
+        try { if (e && e.dataTransfer) fromSq = e.dataTransfer.getData('text/plain') || null; } catch (_) {}
+        if (!fromSq) fromSq = dragFromRef.current;
+        if (!fromSq) return;
+
+        // Clear drag state visuals regardless
+        dragFromRef.current = null;
+        // Clean up custom drag image if present
+        try {
+            if (dragImageElRef.current && dragImageElRef.current.parentNode) {
+                dragImageElRef.current.parentNode.removeChild(dragImageElRef.current);
+            }
+        } catch (_) {}
+        dragImageElRef.current = null;
+
+        if (fromSq === toSquareId) {
+            setSelectedSquareId(null);
+            setLegalMovesForSelected([]);
+            return;
+        }
+
+        // Validate legal destination
+        let isLegal = false;
+        try {
+            const moves = chess.moves({ square: fromSq, verbose: true });
+            isLegal = moves.some(m => m.to === toSquareId);
+        } catch (_) { isLegal = false; }
+
+        if (!isLegal) {
+            setSelectedSquareId(null);
+            setLegalMovesForSelected([]);
+            updateDisplayStatus(`Invalid move. ${getGameStatus()}`);
+            return;
+        }
+
+        // Handle auto-promotion to queen
+        let promotionPiece = null;
+        const pieceBeingMoved = chess.get(fromSq);
+        if (pieceBeingMoved && pieceBeingMoved.type === 'p' && ((pieceBeingMoved.color === 'w' && toSquareId[1] === '8') || (pieceBeingMoved.color === 'b' && toSquareId[1] === '1'))) {
+            promotionPiece = 'q';
+        }
+
+        setSelectedSquareId(null);
+        setLegalMovesForSelected([]);
+        await submitMoveToServer(chess.fen(), fromSq, toSquareId, promotionPiece);
+    }, [chessInstanceRef, submitMoveToServer, setSelectedSquareId, setLegalMovesForSelected, updateDisplayStatus, getGameStatus]);
+
+    const onDragEndSquare = useCallback(() => {
+        dragFromRef.current = null;
+        setSelectedSquareId(null);
+        setLegalMovesForSelected([]);
+        // Clean up custom drag image if it exists
+        try {
+            if (dragImageElRef.current && dragImageElRef.current.parentNode) {
+                dragImageElRef.current.parentNode.removeChild(dragImageElRef.current);
+            }
+        } catch (_) {}
+        dragImageElRef.current = null;
+    }, []);
+
     // --- Render Logic ---
     const renderSquares = () => { 
         const squares = [];
+        const chess = chessInstanceRef.current;
         for (let r_idx = 0; r_idx < 8; r_idx++) { // Corresponds to ranks 8 down to 1
             for (let f_idx = 0; f_idx < 8; f_idx++) { // Corresponds to files a up to h
                 const squareId = FILES[f_idx] + RANKS[r_idx];
@@ -401,8 +530,19 @@ function ChessboardComponent(props) {
                 if (squareId === selectedSquareId) squareClasses += ' selected-square';
                 if (legalMovesForSelected.includes(squareId)) squareClasses += ' legal-move-highlight';
                 if (activePieceDots[squareId]) squareClasses += ` active-piece-dot ${activePieceDots[squareId]}`;
+                const isDraggable = !!piece && !!chess && typeof chess.turn === 'function' && piece.color === chess.turn() && !isBoardLocked;
                 squares.push(html`
-                    <div key=${squareId} id=${squareId} class=${squareClasses} onClick=${() => onSquareClick(squareId)}>
+                    <div
+                        key=${squareId}
+                        id=${squareId}
+                        class=${squareClasses}
+                        onClick=${() => onSquareClick(squareId)}
+                        draggable=${isDraggable}
+                        onDragStart=${(e) => onDragStartSquare(e, squareId)}
+                        onDragEnd=${onDragEndSquare}
+                        onDragOver=${(e) => onDragOverSquare(e, squareId)}
+                        onDrop=${(e) => onDropOnSquare(e, squareId)}
+                    >
                         ${piece && html`<span class="piece ${piece.color === 'w' ? 'piece-white' : 'piece-black'}">${PIECE_SYMBOL_MAP[piece.type][piece.color]}</span>`}
                         ${moveEvaluations[squareId] && html`<div class="evaluation-text ${moveEvaluations[squareId].class}">${moveEvaluations[squareId].text}</div>`}
                     </div>`);

@@ -67,6 +67,7 @@ Notes:
 
 ## Completing a Move
 - Clicking an outlined destination square executes the move.
+- Drag-and-drop is supported: drag a piece of the side to move and drop it on any outlined legal destination to make the move. Pawn promotions auto-queen.
 - The UI returns to Idle with the turn switched to the opponent.
 - The set of piece-priority dots is recomputed for the new side to move and displayed again in Idle.
 
