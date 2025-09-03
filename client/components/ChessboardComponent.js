@@ -35,6 +35,14 @@ function ChessboardComponent(props) {
     const dragFromRef = useRef(null); // Track drag origin square
     const dragImageElRef = useRef(null); // Temporary custom drag image element
 
+    // --- Eval bar animation state ---
+    const [animatedWhiteFrac, setAnimatedWhiteFrac] = useState(0.5); // 0..1
+    const [animatedEvalPawns, setAnimatedEvalPawns] = useState(0.0); // -10..+10
+    const evalAnimRafRef = useRef(null);
+    const evalAnimStartRef = useRef(0);
+    const evalAnimFromRef = useRef({ frac: 0.5, pawns: 0.0 });
+    const evalAnimToRef = useRef({ frac: 0.5, pawns: 0.0 });
+
     useEffect(() => {
         gameIdRef.current = props.gameId;
     }, [props.gameId]);
@@ -556,34 +564,85 @@ function ChessboardComponent(props) {
             return html`<div class="board-container" ref=${boardContainerRef}><div id="status-message-preact" class="status-message ${statusMessage.isError ? 'error-message' : ''}">${statusMessage.text}</div></div>`;
     }
 
-    // Compute advantage/eval bar metrics from current analysis
+    // Compute target advantage/eval from current analysis and animate towards it
+    useEffect(() => {
+        const chess = chessInstanceRef.current;
+        let targetFrac = 0.5;
+        let targetPawns = 0.0;
+        try {
+            const currentFen = (chess && typeof chess.fen === 'function') ? chess.fen() : (fen || INITIAL_FEN);
+            const parts = (currentFen || '').trim().split(/\s+/);
+            const sideToMove = (parts[1] || 'w');
+            const best = analysisData && analysisData.evaluation ? analysisData.evaluation : null;
+            const cp = (best && typeof best.score_cp === 'number') ? best.score_cp : null; // white-perspective centipawns
+            const mateIn = (best && (best.mate_in !== null && best.mate_in !== undefined)) ? best.mate_in : null; // from side-to-move POV
+            if (cp !== null) {
+                const pawns = cp / 100.0; // white advantage in pawns
+                const clamped = Math.max(-10, Math.min(10, pawns));
+                targetFrac = 0.5 + (clamped / 20.0);
+                targetPawns = clamped;
+            } else if (mateIn !== null) {
+                const whiteWinning = (sideToMove === 'w' && mateIn > 0) || (sideToMove === 'b' && mateIn < 0);
+                targetFrac = whiteWinning ? 1.0 : 0.0;
+                targetPawns = whiteWinning ? 10.0 : -10.0; // snap number to bounds in mate
+            } else {
+                targetFrac = 0.5; targetPawns = 0.0;
+            }
+        } catch (_) { /* keep defaults */ }
+
+        // Cancel any running animation
+        try { if (evalAnimRafRef.current) cancelAnimationFrame(evalAnimRafRef.current); } catch (_) {}
+
+        // Set up tween
+        const duration = 420; // ms
+        const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        evalAnimStartRef.current = start;
+        evalAnimFromRef.current = { frac: animatedWhiteFrac, pawns: animatedEvalPawns };
+        evalAnimToRef.current = { frac: targetFrac, pawns: targetPawns };
+
+        const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+        const step = (nowTs) => {
+            const now = nowTs || ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+            const t = Math.max(0, Math.min(1, (now - start) / duration));
+            const e = easeOutCubic(t);
+            const from = evalAnimFromRef.current;
+            const to = evalAnimToRef.current;
+            const frac = from.frac + (to.frac - from.frac) * e;
+            const pawns = from.pawns + (to.pawns - from.pawns) * e;
+            setAnimatedWhiteFrac(frac);
+            setAnimatedEvalPawns(pawns);
+            if (t < 1) {
+                evalAnimRafRef.current = requestAnimationFrame(step);
+            } else {
+                evalAnimRafRef.current = null;
+            }
+        };
+        evalAnimRafRef.current = requestAnimationFrame(step);
+
+        return () => {
+            try { if (evalAnimRafRef.current) cancelAnimationFrame(evalAnimRafRef.current); } catch (_) {}
+            evalAnimRafRef.current = null;
+        };
+    }, [analysisData, fen]);
+
+    const whitePercent = Math.max(0, Math.min(100, (animatedWhiteFrac * 100)));
+    // Display text: animate number for cp; on mates, show ±M immediately
     let evalDisplay = '+0.0';
-    let whiteFrac = 0.5;
     try {
-        const currentFen = chessInstanceRef.current?.fen?.() || fen || INITIAL_FEN;
+        const chess = chessInstanceRef.current;
+        const currentFen = (chess && typeof chess.fen === 'function') ? chess.fen() : (fen || INITIAL_FEN);
         const parts = (currentFen || '').trim().split(/\s+/);
         const sideToMove = (parts[1] || 'w');
         const best = analysisData && analysisData.evaluation ? analysisData.evaluation : null;
-        const cp = (best && typeof best.score_cp === 'number') ? best.score_cp : null; // white-perspective centipawns
         const mateIn = (best && (best.mate_in !== null && best.mate_in !== undefined)) ? best.mate_in : null; // from side-to-move POV
-        if (cp !== null) {
-            // Positive = White advantage
-            const pawns = cp / 100.0;
-            const clamped = Math.max(-10, Math.min(10, pawns));
-            whiteFrac = 0.5 + (clamped / 20.0);
-            evalDisplay = (clamped >= 0 ? '+' : '') + clamped.toFixed(1);
-        } else if (mateIn !== null) {
-            // Map mate to max advantage, infer sign for White advantage
+        if (mateIn !== null) {
             const whiteWinning = (sideToMove === 'w' && mateIn > 0) || (sideToMove === 'b' && mateIn < 0);
-            whiteFrac = whiteWinning ? 1.0 : 0.0;
             evalDisplay = (whiteWinning ? '+M' : '-M') + Math.abs(mateIn);
         } else {
-            whiteFrac = 0.5;
-            evalDisplay = '+0.0';
+            const val = Math.max(-10, Math.min(10, animatedEvalPawns));
+            evalDisplay = (val >= 0 ? '+' : '') + val.toFixed(1);
         }
-    } catch (_) { /* noop - keep defaults */ }
-
-    const whitePercent = Math.max(0, Math.min(100, (whiteFrac * 100)));
+    } catch (_) { /* keep default */ }
 
     return html`
         <div class="board-container" ref=${boardContainerRef}>
@@ -595,8 +654,8 @@ function ChessboardComponent(props) {
             <div class="eval-bar-row" style=${{ display: 'flex', width: '100%', maxWidth: '560px', margin: '6px 0 0 0' }}>
                 <div class="advantage-bar-h" style=${{ position: 'relative', height: '24px', width: '100%', border: '2px solid #1e1f22', borderRadius: '6px', overflow: 'hidden', background: '#111827' }}>
                     <div class="adv-h-inner" style=${{ position: 'absolute', inset: 0 }}>
-                        <div style=${{ position: 'absolute', left: 0, top: 0, bottom: 0, background: '#f9fafb', width: `${whitePercent.toFixed(1)}%` }}></div>
-                        <div style=${{ position: 'absolute', right: 0, top: 0, bottom: 0, background: '#0b0b0b', width: `${(100 - whitePercent).toFixed(1)}%` }}></div>
+                        <div style=${{ position: 'absolute', left: 0, top: 0, bottom: 0, background: '#f9fafb', width: `${whitePercent.toFixed(1)}%`, transition: 'none' }}></div>
+                        <div style=${{ position: 'absolute', right: 0, top: 0, bottom: 0, background: '#0b0b0b', width: `${(100 - whitePercent).toFixed(1)}%`, transition: 'none' }}></div>
                     </div>
                     <div style=${{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 700, fontSize: '12px', color: '#e5e7eb', textShadow: '0 1px 2px rgba(0,0,0,0.65)', pointerEvents: 'none' }}>${evalDisplay}</div>
                 </div>
